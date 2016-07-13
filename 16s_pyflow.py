@@ -14,7 +14,7 @@
 __author__  = "Madis Rumming <mrumming@cebitec.uni-bielefeld.de>"
 __copyright__ = "Copyright 2016, Computational Metagenomics, Faculty of Technology, Bielefeld University"
 
-__version__ = "1.0"
+__version__ = "1.1"
 __maintainer__ = "Madis Rumming"
 __email__ = "mrumming@cebitec.uni-bielefeld.de"
 __status__ = "Production"
@@ -42,7 +42,7 @@ def parse_arguments():
 	parser.add_argument("-i", "--input-dir", dest='input_dir', help="Path to home directory of sample subdirectories with .fastq(.gz). Default: %s" % (os.path.abspath('.')), default=os.path.abspath('.'), required=False, type=str)
 	parser.add_argument("-o", "--output-dir", dest='output_dir', help="Path to final output directory to write results to. Default: %s" % (os.path.abspath('.')), default=os.path.abspath('.'), required=False, type=str)
 	
-	
+	parser.add_argument("--fastq-per-directory", dest='fastq_per_dir', help="Use this switch, if read pairs are stored in seperate directories (one per sample, each directory consists of two fastq(.gz) files).", required=False, default=False, action='store_true')
 	parser.add_argument("--flash-path", dest='flash', help="Path to flash binary to use. Default: %s" % (flash), default=flash, required=False, type=str)
 	parser.add_argument("--flash-threshold", dest='flash_th', help="Threshold of max errors within overlap region. Default: %f" % (0.01), default=0.01, type=float, required=False)
 	parser.add_argument("--flash-min-overlap", dest='flash_min', help="Minimal overlap length. Default: %iBP" % (10), default=10, type=int, required=False)
@@ -53,7 +53,7 @@ def parse_arguments():
 	parser.add_argument("--qiime-steps", dest='qiime_steps', help="Step 4 realted settings for OTU clustering. Default: %s" % ('suppress_step4'), choices=['with_step4', 'suppress_step4', 'both'], default='suppress_step4', required=False)
 	parser.add_argument("--qiime-settings", dest='qiime_settings', help="Path to qiime parameter file (optional).", required=False, default=None, type=str)
 	parser.add_argument("--qiime-metadata", dest='qiime_metadata', help="Tab-separated metadata for all samples with QIIME-compatible normalized SampleIDs. 'a-z', 'A-Z' and '.' are allowed characters. Sample names as found in the input directory as subdirectories are normalized through replacing the following characters with a '.': _-+%%<BLANK WHITESPACE>;:,/ A header with speaking category names is required, starting with '#SampleID'. Allowed characters for the header are: 'a-z', 'A-Z', '0-9' and '_'. Example header: '#SampleID\\tCondition\\tMedication'", required=False, default=None, type=str)
-	
+	parser.add_argument("--new-cluster", dest='new_cluster', help="Use the new cluster engine (OGE)", required=False, default=False, action='store_true')
 	
 	
 	p_group = parser.add_argument_group("Stop after", "Stop computation after the choosen step.")
@@ -195,8 +195,10 @@ class RRNa16sWorkflow(WorkflowRunner):
 			# 'with_step4', 'suppress_step4', 'both'
 			
 			nCores = self.nCores
+			memUsage = 4096
 			if self.qiime_steps == 'both':
 				nCores = self.nCores/2
+				memUsage = 2*memUsage
 			
 			cmd = cmd_qiime_base\
 				+ "pick_open_reference_otus.py"\
@@ -217,8 +219,9 @@ class RRNa16sWorkflow(WorkflowRunner):
 					qiime_output_dirs.append("open_ref_otus_tax_w4")
 					cmd_ = cmd\
 						+ " -o %s" % (os.path.join(self.output_dir, "qiime", "open_ref_otus_tax_w4"))
-					self.addTask(label="openref_qiime_tax_w4", command=cmd_, dependencies="split_qiime", env={"PATH": "/vol/qiime-1.9/anaconda-2.1x64/bin:/usr/bin:/bin:/usr(local/bin:$PATH"}, nCores=nCores, memMb=4096)
-			
+					self.addTask(label="openref_qiime_tax_w4", command=cmd_, dependencies="split_qiime", env={"PATH": "/vol/qiime-1.9/anaconda-2.1x64/bin:/usr/bin:/bin:/usr(local/bin:$PATH"}, nCores=nCores, memMb=memUsage)
+					
+					
 					cmd_add = cmd_qiime_base\
 						+ "biom add-metadata"\
 						+ " -i %s" % (os.path.join(self.output_dir, "qiime", "open_ref_otus_tax_w4", "otu_table_mc2_w_tax_no_pynast_failures.biom"))\
@@ -232,7 +235,7 @@ class RRNa16sWorkflow(WorkflowRunner):
 					cmd_ = cmd\
 						+ " -o %s" % (os.path.join(self.output_dir, "qiime", "open_ref_otus_w4"))\
 						+ " --suppress_taxonomy_assignment"
-					self.addTask(label="openref_qiime_w4", command=cmd_, dependencies="split_qiime", env={"PATH": "/vol/qiime-1.9/anaconda-2.1x64/bin:/usr/bin:/bin:/usr(local/bin:$PATH"}, nCores=nCores, memMb=4096)
+					self.addTask(label="openref_qiime_w4", command=cmd_, dependencies="split_qiime", env={"PATH": "/vol/qiime-1.9/anaconda-2.1x64/bin:/usr/bin:/bin:/usr(local/bin:$PATH"}, nCores=nCores, memMb=memUsage)
 
 
 			if self.qiime_steps == 'suppress_step4' or self.qiime_steps == 'both':
@@ -243,7 +246,7 @@ class RRNa16sWorkflow(WorkflowRunner):
 						+ " -o %s" % (os.path.join(self.output_dir, "qiime", "open_ref_otus_tax_no4"))\
 						+ " --suppress_step4"
 
-					self.addTask(label="openref_qiime_tax_no4", command=cmd_, dependencies="split_qiime", env={"PATH": "/bin:/usr/local/bin:/usr/bin:/vol/qiime-1.9/anaconda-2.1x64/bin:$PATH"}, nCores=nCores, memMb=4096)
+					self.addTask(label="openref_qiime_tax_no4", command=cmd_, dependencies="split_qiime", env={"PATH": "/bin:/usr/local/bin:/usr/bin:/vol/qiime-1.9/anaconda-2.1x64/bin:$PATH"}, nCores=nCores, memMb=memUsage)
 			
 					cmd_add = cmd_qiime_base\
 						+ "biom add-metadata"\
@@ -262,7 +265,7 @@ class RRNa16sWorkflow(WorkflowRunner):
 						+ " --suppress_taxonomy_assignment"
 					
 					
-					self.addTask(label="openref_qiime_no4", command=cmd_, dependencies="split_qiime", env={"PATH": "/bin:/usr/local/bin:/usr/bin:/vol/qiime-1.9/anaconda-2.1x64/bin:$PATH"}, nCores=nCores, memMb=4096)
+					self.addTask(label="openref_qiime_no4", command=cmd_, dependencies="split_qiime", env={"PATH": "/bin:/usr/local/bin:/usr/bin:/vol/qiime-1.9/anaconda-2.1x64/bin:$PATH"}, nCores=nCores, memMb=memUsage)
 
 # Compute alpha diversity measures and plots
 		if self.stop_at > 4:
@@ -360,15 +363,26 @@ def main():
 	check_args(args)
 
 	samples = {}
-	for entry in os.listdir(args.input_dir):
-		if os.path.isdir(os.path.join(args.input_dir, entry)):
-			files = os.listdir(os.path.join(args.input_dir, entry))
-			files = filter(lambda s : s.endswith(".fastq.gz"), files)
-			if len(files) == 2:
-				samples[entry] = [os.path.join(args.input_dir, entry, file_) for file_ in files]
+	if args.fastq_per_dir:
+		for entry in os.listdir(args.input_dir):
+			if os.path.isdir(os.path.join(args.input_dir, entry)):
+				files = os.listdir(os.path.join(args.input_dir, entry))
+				files = filter(lambda s : s.endswith(".fastq.gz"), files)
+				if len(files) == 2:
+					samples[entry] = [os.path.join(args.input_dir, entry, file_) for file_ in files]
+	else:
+		files = os.listdir(".")
+		files = filter(lambda s : s.endswith(".fastq.gz"), files)
+		files.sort()
+		for i in xrange(len(files)/2):
+			samplename = "_".join(files[i*2].split(".")[0].split("_")[:-1])
+			samples[samplename] = [os.path.join(args.input_dir, files[i*2]), os.path.join(args.input_dir, files[i*2+1])]
 
 	wflow = RRNa16sWorkflow(args.stop_at, args.output_dir, samples, args.flash, args.flash_th, args.flash_min, args.flash_max, args.fastqc, args.qiime_steps, args.qiime_settings, args.qiime_metadata,  args.nCores)
-	retval = wflow.run(mode="sge", nCores=args.nCores, memMb="unlimited", isDryRun=args.dry_run, schedulerArgList=['-l','linh=1'])
+	if args.new_cluster:
+		retval = wflow.run(mode="sge", nCores=args.nCores, memMb="unlimited", isDryRun=args.dry_run)
+	else:
+		retval = wflow.run(mode="sge", nCores=args.nCores, memMb="unlimited", isDryRun=args.dry_run, schedulerArgList=['-l','linh=1'])
 	sys.exit(retval)
 
 
